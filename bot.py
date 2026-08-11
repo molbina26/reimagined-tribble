@@ -1,9 +1,8 @@
 import asyncio
 import logging
 from datetime import datetime
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from telegram import Bot
+from telegram.ext import Application, ContextTypes
 
 from config import BOT_TOKEN, CHANNEL_ID
 from rss_fetcher import fetch_news, get_new_news
@@ -13,12 +12,8 @@ from translator import translate_news
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация бота (aiogram 3.x)
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
-dp = Dispatcher()
+# Инициализация бота (python-telegram-bot)
+app = Application.builder().token(BOT_TOKEN).build()
 
 # Хранилище последних опубликованных новостей
 last_published_link = None
@@ -36,7 +31,7 @@ def format_post(translated_news):
     summary = summary[:300] + '...' if len(summary) > 300 else summary
 
     post = f"""
-<b>📰 {title}</b>
+📰 <b>{title}</b>
 
 {summary}
 
@@ -59,6 +54,8 @@ async def post_news():
         logger.info("Нет новых новостей")
         return
 
+    bot = app.bot
+
     for news in news_list[:3]:
         try:
             translated = translate_news(news)
@@ -67,7 +64,7 @@ async def post_news():
                 continue
 
             post_text = format_post(translated)
-            await bot.send_message(CHANNEL_ID, post_text)
+            await bot.send_message(CHANNEL_ID, post_text, parse_mode='HTML')
 
             last_published_link = translated['link']
             posted_today += 1
@@ -80,28 +77,32 @@ async def post_news():
             logger.error(f"Ошибка публикации: {e}")
 
 
-async def scheduler_loop():
+async def scheduler_job(context: ContextTypes.DEFAULT_TYPE):
     """Планировщик публикаций"""
-    while True:
-        await asyncio.sleep(1800)
-
-        current_hour = datetime.now().hour
-        if 8 <= current_hour <= 23:
-            await post_news()
+    current_hour = datetime.now().hour
+    if 8 <= current_hour <= 23:
+        await post_news()
 
 
 async def on_startup():
     """Запуск при старте"""
     logger.info("Бот запущен!")
+    bot = app.bot
     await bot.send_message(CHANNEL_ID, "🤖 Бот крипто-новостей активирован!\n"
                                        "Теперь я буду публиковать новости из RSS лент.")
 
 
 async def main():
-    dp.startup.register(on_startup)
-    asyncio.create_task(scheduler_loop())
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    # Регистрация startup
+    await app.bot_data.setdefault('startup', False)
+    await on_startup()
+
+    # Запускаем планировщик каждые 30 минут
+    job_queue = app.job_queue
+    job_queue.run_repeating(scheduler_job, interval=1800, first=10)
+
+    # Запуск polling
+    await app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
