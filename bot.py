@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from datetime import datetime
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ParseMode
+import aioschedule
 
 from config import BOT_TOKEN, CHANNEL_ID
 from rss_fetcher import fetch_news, get_new_news
@@ -13,14 +13,11 @@ from translator import translate_news
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация бота и диспетчера (aiogram 3.7+)
-bot = Bot(
-    token=BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
-dp = Dispatcher()
+# Инициализация бота (aiogram 2.x)
+bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+dp = Dispatcher(bot)
 
-# Хранилище последних опубликованных новостей (в реальном проекте - БД)
+# Хранилище последних опубликованных новостей
 last_published_link = None
 posted_today = 0
 
@@ -60,11 +57,10 @@ async def post_news():
         logger.info("Нет новых новостей")
         return
 
-    for news in news_list:
+    for news in news_list[:3]:
         try:
             translated = translate_news(news)
 
-            # Проверка на дубликат
             if translated['link'] == last_published_link:
                 continue
 
@@ -76,30 +72,23 @@ async def post_news():
 
             logger.info(f"Опубликовано: {translated['title'][:30]}...")
 
-            # Задержка между постами
             await asyncio.sleep(60)
 
         except Exception as e:
             logger.error(f"Ошибка публикации: {e}")
 
-    # Сброс счётчика в полночь
-    current_hour = datetime.now().hour
-    if current_hour == 0:
-        posted_today = 0
-
 
 async def scheduler_loop():
     """Планировщик публикаций"""
     while True:
-        await asyncio.sleep(1800)  # Проверка каждые 30 минут
+        await asyncio.sleep(1800)
 
         current_hour = datetime.now().hour
-        # Постим с 8:00 до 23:00
         if 8 <= current_hour <= 23:
             await post_news()
 
 
-async def on_startup():
+async def on_startup(dp):
     """Запуск при старте"""
     logger.info("Бот запущен!")
     await bot.send_message(CHANNEL_ID, "🤖 Бот крипто-новостей активирован!\n"
@@ -108,11 +97,7 @@ async def on_startup():
 
 async def main():
     dp.startup.register(on_startup)
-
-    # Запускаем планировщик
     asyncio.create_task(scheduler_loop())
-
-    # Удаляем webhook и запускаем polling
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
