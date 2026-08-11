@@ -12,9 +12,6 @@ from translator import translate_news
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация бота (python-telegram-bot)
-app = Application.builder().token(BOT_TOKEN).build()
-
 # Хранилище последних опубликованных новостей
 last_published_link = None
 posted_today = 0
@@ -42,7 +39,7 @@ def format_post(translated_news):
     return post.strip()
 
 
-async def post_news():
+async def post_news(bot: Bot):
     """Публикация новости в канал"""
     global last_published_link, posted_today
 
@@ -53,8 +50,6 @@ async def post_news():
     if not news_list:
         logger.info("Нет новых новостей")
         return
-
-    bot = app.bot
 
     for news in news_list[:3]:
         try:
@@ -81,27 +76,26 @@ async def scheduler_job(context: ContextTypes.DEFAULT_TYPE):
     """Планировщик публикаций"""
     current_hour = datetime.now().hour
     if 8 <= current_hour <= 23:
-        await post_news()
+        await post_news(context.bot)
 
 
-async def on_startup():
+async def post_startup(app: Application):
     """Запуск при старте"""
     logger.info("Бот запущен!")
-    bot = app.bot
-    await bot.send_message(CHANNEL_ID, "🤖 Бот крипто-новостей активирован!\n"
-                                       "Теперь я буду публиковать новости из RSS лент.")
+    await app.bot.send_message(CHANNEL_ID, "🤖 Бот крипто-новостей активирован!\n"
+                                            "Теперь я буду публиковать новости из RSS лент.")
 
 
 async def main():
-    # Регистрация startup
-    await app.bot_data.setdefault('startup', False)
-    await on_startup()
+    app = Application.builder().token(BOT_TOKEN).build()
 
-    # Запускаем планировщик каждые 30 минут
-    job_queue = app.job_queue
-    job_queue.run_repeating(scheduler_job, interval=1800, first=10)
+    # Startup
+    await post_startup(app)
 
-    # Запуск polling
+    # Планировщик каждые 30 минут
+    app.job_queue.run_repeating(scheduler_job, interval=1800, first=10)
+
+    # Запуск
     await app.run_polling(drop_pending_updates=True)
 
 
