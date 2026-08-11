@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from datetime import datetime
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ParseMode
-import aioschedule
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN, CHANNEL_ID
 from rss_fetcher import fetch_news, get_new_news
@@ -13,9 +13,12 @@ from translator import translate_news
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация бота (aiogram 2.x)
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher(bot)
+# Инициализация бота (aiogram 3.x)
+bot = Bot(
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
+dp = Dispatcher()
 
 # Хранилище последних опубликованных новостей
 last_published_link = None
@@ -29,7 +32,6 @@ def format_post(translated_news):
     link = translated_news['link']
     source = translated_news['source']
 
-    # Очистка summary от HTML
     summary = summary.replace('<br>', '\n').replace('<p>', '').replace('</p>', '')
     summary = summary[:300] + '...' if len(summary) > 300 else summary
 
@@ -88,7 +90,7 @@ async def scheduler_loop():
             await post_news()
 
 
-async def on_startup(dp):
+async def on_startup():
     """Запуск при старте"""
     logger.info("Бот запущен!")
     await bot.send_message(CHANNEL_ID, "🤖 Бот крипто-новостей активирован!\n"
