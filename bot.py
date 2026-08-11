@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime
 from telegram import Bot
-from telegram.ext import Application, ContextTypes
+from telegram.ext import Application, ContextTypes, JobQueue
 
 from config import BOT_TOKEN, CHANNEL_ID
 from rss_fetcher import fetch_news, get_new_news
@@ -87,7 +87,8 @@ async def post_startup(app: Application):
 
 
 async def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    job_queue = JobQueue()
+    app = Application.builder().token(BOT_TOKEN).job_queue(job_queue).build()
 
     # Startup
     await post_startup(app)
